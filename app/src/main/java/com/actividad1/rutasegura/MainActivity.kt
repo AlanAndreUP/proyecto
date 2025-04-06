@@ -3,6 +3,7 @@ package com.actividad1.rutasegura
 import android.Manifest
 import android.content.Context
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,7 +25,10 @@ import com.actividad1.rutasegura.data.simulation.SimulationEngine
 import com.actividad1.rutasegura.ui.theme.screen.* // Importa todas tus pantallas y VMs
 import com.actividad1.rutasegura.util.PermissionHandler // Tu manejador de permisos
 import kotlinx.coroutines.Dispatchers
-
+import androidx.activity.compose.rememberLauncherForActivityResult // Importar
+import com.actividad1.rutasegura.data.model.ScanResult
+import com.actividad1.rutasegura.ui.theme.components.LocationProviderWrapper
+import com.actividad1.rutasegura.util.ScanQrCodeContract
 // Sealed class para definir las rutas de navegación de forma segura
 sealed class AppScreen(val route: String) {
     object Login : AppScreen("login_screen")
@@ -52,7 +56,7 @@ class MainActivity : ComponentActivity() {
         // --- Instanciación Manual de Dependencias para MainViewModel ---
         val appContext: Context = applicationContext
         // Asegúrate que la ruta a LocationProviderWrapper sea correcta
-        val locationWrapper = com.actividad1.rutasegura.ui.theme.components.LocationProviderWrapper(appContext)
+        val locationWrapper = LocationProviderWrapper(appContext)
         val routeRepo: RouteRepository = RouteRepositoryImpl()
         val simulationEngine = SimulationEngine(routeRepo, Dispatchers.Default)
         val locationRepo: LocationRepository = LocationRepositoryImpl(locationWrapper, Dispatchers.IO)
@@ -84,7 +88,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Método para lanzar permisos desde Composables
     fun requestPermissions(permissions: List<String>, callback: (Map<String, Boolean>) -> Unit) {
         permissionCallback = callback
         requestMultiplePermissions.launch(permissions.toTypedArray())
@@ -98,7 +101,21 @@ fun AppNavigation(
 ) {
     val navController = rememberNavController()
     val adminViewModel: AdminViewModel = viewModel() // VM para admin
+    val scanQrLauncher = rememberLauncherForActivityResult(
+        contract = ScanQrCodeContract(), // Usa nuestro Contract personalizado
+        onResult = { result: String? ->
+            // --- Resultado del Escaner ---
+            if (result != null) {
+                Log.i("AppNavigation", "Resultado del escaneo recibido: $result")
+                // Actualiza el ViewModel con el resultado exitoso
+                mainViewModel.updateScanResult(ScanResult.Success(result))
+            } else {
+                Log.w("AppNavigation", "Escaneo cancelado o fallido")
 
+                mainViewModel.updateScanResult(ScanResult.Cancelled)
+            }
+        }
+    )
     NavHost(
         navController = navController,
         startDestination = AppScreen.MainUser.route
@@ -146,11 +163,14 @@ fun AppNavigation(
                         viewModel = mainViewModel,
                         onNavigateToLogin = { // Define la acción para navegar a Login
                             navController.navigate(AppScreen.Login.route) {
-                                // Decide si quieres limpiar el backstack aquí o no
-                                // popUpTo(AppScreen.MainUser.route) { inclusive = true } // Opcional
-                                launchSingleTop = true // Buena idea para no apilar logins
+
+                                launchSingleTop = true
                             }
-                        }
+                        },
+                        onScanQrClicked  = {
+
+                        scanQrLauncher.launch(null)
+                    }
                     )
                 },
                 rationaleContent = { showRationale, onRationaleReply ->

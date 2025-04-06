@@ -98,27 +98,22 @@ class MainViewModel(
     }
 
     fun performScan() {
-        if (_isLoadingScan.value) return
+        _scanResult.value = null // Limpiar resultado anterior antes de escanear
+        println("ViewModel: Solicitud de escaneo iniciada desde UI.")
+    }
 
-        viewModelScope.launch {
-            _isLoadingScan.value = true
-            _scanResult.value = null
-            try {
-                _scanResult.value = cameraRepository.scanQRCode()
-            } catch (e: Exception) {
-                System.err.println("Error durante el escaneo QR: ${e.message}")
-                _scanResult.value = ScanResult.Error
-            } finally {
-                _isLoadingScan.value = false
-            }
-        }
+    fun updateScanResult(result: ScanResult) {
+        _scanResult.value = result
+        _isLoadingScan.value = false
+        println("ViewModel: Resultado de escaneo recibido: $result")
+
     }
 
 
     fun clearScanResult() {
         _scanResult.value = null
+        _isLoadingScan.value = false // Asegurarse que no se quede cargando
     }
-
     private fun calculateNearestBusEta(userLoc: UserLocation?, buses: List<SimulatedBusState>): String? {
         if (userLoc == null || buses.isEmpty()) return null
 

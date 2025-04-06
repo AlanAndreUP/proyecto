@@ -34,7 +34,7 @@ import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 @Composable
-fun MainScreen(viewModel: MainViewModel, onNavigateToLogin: () -> Unit) {
+fun MainScreen(viewModel: MainViewModel, onNavigateToLogin: () -> Unit,onScanQrClicked: () -> Unit ) {
     val userLocation by viewModel.userLocation.collectAsState()
     val availableRoutes by viewModel.availableRoutes.collectAsState()
     val simulatedBuses by viewModel.simulatedBuses.collectAsState()
@@ -67,7 +67,8 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToLogin: () -> Unit) {
                 onRouteSelected = { selectedRouteId = it },
                 showRouteSelector = showRouteSelector,
                 onShowRouteSelectorChange = { showRouteSelector = it } ,
-                onNavigateToLogin = onNavigateToLogin
+                onNavigateToLogin = onNavigateToLogin,
+                onScanQrClicked = onScanQrClicked
             )
         }
     ) { paddingValues ->
@@ -252,7 +253,8 @@ private fun AppBottomBar(
     onRouteSelected: (String?) -> Unit,
     showRouteSelector: Boolean,
     onShowRouteSelectorChange: (Boolean) -> Unit,
-    onNavigateToLogin: ()-> Unit
+    onNavigateToLogin: ()-> Unit,
+    onScanQrClicked: () -> Unit
 ) {
     BottomAppBar(
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -324,7 +326,7 @@ private fun AppBottomBar(
             }
 
             Button(
-                onClick = { viewModel.performScan() },
+                onClick = { onScanQrClicked() },
                 enabled = !isLoadingScan,
                 modifier = Modifier.weight(1f)
             ) {

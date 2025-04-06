@@ -29,6 +29,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".ui.theme.screen.ScannerActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+        android:theme="@style/Theme.AppCompat.NoActionBar"
+        tools:ignore="LockedOrientationActivity" />
     </application>
 
 </manifest>

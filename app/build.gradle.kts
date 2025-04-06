@@ -46,6 +46,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     // Compose
     implementation(platform("androidx.compose:compose-bom:2024.04.01"))
     implementation("androidx.compose.ui:ui")
@@ -66,6 +67,10 @@ dependencies {
     // Location
     implementation("com.google.android.gms:play-services-location:21.2.0")
     implementation(libs.androidx.preference.ktx)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.play.services.mlkit.barcode.scanning)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.firebase.crashlytics.buildtools)
 
     // Testing
     testImplementation("junit:junit:4.13.2")
