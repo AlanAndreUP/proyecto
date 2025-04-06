@@ -114,6 +114,7 @@ class MainViewModel(
         }
     }
 
+
     fun clearScanResult() {
         _scanResult.value = null
     }
