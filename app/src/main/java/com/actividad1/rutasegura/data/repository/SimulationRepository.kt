@@ -1,13 +1,11 @@
 package com.actividad1.rutasegura.data.repository
 
-
 import com.actividad1.rutasegura.data.model.SimulatedBusState
-import com.actividad1.rutasegura.data.simulation.SimulationEngine
+import com.actividad1.rutasegura.data.simulation.SimulationEngine // Necesario para el constructor
 import kotlinx.coroutines.flow.Flow
-import javax.inject.Inject
-import javax.inject.Singleton
+// Quita imports de javax.inject
 
-// Interfaz
+// Interfaz (sin cambios)
 interface SimulationRepository {
     suspend fun startSimulation(routeId: String)
     suspend fun pauseSimulation()
@@ -16,14 +14,13 @@ interface SimulationRepository {
     fun isSimulationRunning(): Flow<Boolean>
 }
 
-// Implementación
-@Singleton // El repositorio puede ser Singleton si el engine lo es
-class SimulationRepositoryImpl @Inject constructor(
-    private val engine: SimulationEngine // Inyecta el engine
+// Implementación SIN HILT
+class SimulationRepositoryImpl(
+    private val engine: SimulationEngine // Recibe vía constructor
 ) : SimulationRepository {
     override suspend fun startSimulation(routeId: String) = engine.start(routeId)
-    override suspend fun pauseSimulation() = engine.pause()
-    override suspend fun stopSimulation() = engine.stop()
-    override fun getBusStateUpdates(): Flow<List<SimulatedBusState>> = engine.busStates
-    override fun isSimulationRunning(): Flow<Boolean> = engine.isRunning
+    override suspend fun pauseSimulation() = engine.pause() // Asume que engine tiene estos métodos
+    override suspend fun stopSimulation() = engine.stop()   // Asume que engine tiene estos métodos
+    override fun getBusStateUpdates(): Flow<List<SimulatedBusState>> = engine.busStates // Asume que engine expone esto
+    override fun isSimulationRunning(): Flow<Boolean> = engine.isRunning // Asume que engine expone esto
 }
