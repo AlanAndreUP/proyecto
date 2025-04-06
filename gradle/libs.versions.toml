@@ -13,8 +13,11 @@ cameraLifecycle = "1.4.2"
 playServicesMlkitBarcodeScanning = "18.3.1"
 cameraView = "1.4.2"
 firebaseCrashlyticsBuildtools = "3.0.3"
+cameraCore = "1.4.2"
 
 [libraries]
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2" }
+androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "cameraCore" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
