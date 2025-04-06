@@ -13,9 +13,11 @@ cameraLifecycle = "1.4.2"
 playServicesMlkitBarcodeScanning = "18.3.1"
 cameraView = "1.4.2"
 firebaseCrashlyticsBuildtools = "3.0.3"
-transportationConsumer = "3.1.0"
+cameraCore = "1.4.2"
 
 [libraries]
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2" }
+androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "cameraCore" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
@@ -35,7 +37,6 @@ androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycl
 play-services-mlkit-barcode-scanning = { group = "com.google.android.gms", name = "play-services-mlkit-barcode-scanning", version.ref = "playServicesMlkitBarcodeScanning" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraView" }
 firebase-crashlytics-buildtools = { group = "com.google.firebase", name = "firebase-crashlytics-buildtools", version.ref = "firebaseCrashlyticsBuildtools" }
-transportation-consumer = { group = "com.google.android.libraries.mapsplatform.transportation", name = "transportation-consumer", version.ref = "transportationConsumer" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -47,6 +47,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.view)
     // Compose
     implementation(platform("androidx.compose:compose-bom:2024.04.01"))
     implementation("androidx.compose.ui:ui")
