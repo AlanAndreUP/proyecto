@@ -48,7 +48,6 @@ import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
-
 private const val TAG = "ScannerScreen"
 
 @Composable
@@ -87,6 +86,7 @@ fun ScannerScreen(
     // Solicitar permiso si no se tiene
     LaunchedEffect(key1 = true) { // Se ejecuta una vez al entrar al composable
         if (!hasCameraPermission) {
+            Log.d(TAG, "Solicitando permiso de cámara...")
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
@@ -100,11 +100,13 @@ fun ScannerScreen(
                 onQrCodeDetected = { qrContent ->
                     // Asegurarse que se ejecuta en el hilo principal para la navegación/callback
                     coroutineScope.launch(Dispatchers.Main) {
+                        Log.d(TAG, "Código QR detectado: $qrContent")
                         onScanResult(qrContent)
                     }
                 },
                 onError = {
                     coroutineScope.launch(Dispatchers.Main) {
+                        Log.e(TAG, "Error al iniciar la cámara")
                         Toast.makeText(context, "Error al iniciar la cámara", Toast.LENGTH_SHORT).show()
                         onScanResult(null) // Indicar error/cancelación
                     }
@@ -123,7 +125,10 @@ fun ScannerScreen(
 
         // Botón para volver atrás (cancelar)
         IconButton(
-            onClick = { onScanResult(null) }, // Llama al callback con null para indicar cancelación
+            onClick = {
+                Log.d(TAG, "Acción de volver atrás (cancelación)")
+                onScanResult(null) // Llama al callback con null para indicar cancelación
+            },
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(16.dp)
@@ -160,7 +165,9 @@ private fun CameraPreview(
     // --- Efecto para manejar el ciclo de vida de la cámara ---
     LaunchedEffect(lifecycleOwner) {
         try {
+            Log.d(TAG, "Esperando a que el CameraProvider esté listo...")
             cameraProvider = cameraProviderFuture.await() // Espera a que el provider esté listo
+            Log.d(TAG, "CameraProvider listo, vinculando casos de uso")
             bindCameraUseCases(
                 cameraProvider!!, // Sabemos que no es null aquí por el await
                 previewView,
@@ -218,6 +225,7 @@ private fun bindCameraUseCases(
             it.setAnalyzer(cameraExecutor, QRCodeAnalyzer(barcodeScanner, vibrator) { qrContent ->
                 // Detener análisis y cámara ANTES de notificar el resultado
                 cameraProvider.unbindAll() // Importante para evitar múltiples detecciones
+                Log.d(TAG, "Escaneo completado, enviando resultado: $qrContent")
                 onQrCodeDetected(qrContent)
             })
         }
@@ -240,8 +248,7 @@ private fun bindCameraUseCases(
     }
 }
 
-
-// --- Analizador de QR (simplificado, ya no necesita contexto) ---
+// --- Analizador de QR ---
 private class QRCodeAnalyzer(
     private val scanner: com.google.mlkit.vision.barcode.BarcodeScanner,
     private val vibrator: Vibrator?,
@@ -259,40 +266,50 @@ private class QRCodeAnalyzer(
 
         val mediaImage = imageProxy.image
         if (mediaImage != null) {
+            Log.d(TAG, "Analizando imagen para QR...") // Log para indicar el inicio del análisis
             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+            Log.d(TAG, "Imagen convertida a InputImage con rotación: ${imageProxy.imageInfo.rotationDegrees} grados.")
+
             scanner.process(image)
                 .addOnSuccessListener { barcodes ->
+                    Log.d(TAG, "Proceso de escaneo de código de barras completado.")
                     val qrCode = barcodes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE && !it.rawValue.isNullOrBlank() }
                     if (qrCode != null && isScanning) {
-                        isScanning = false // Detener escaneo tras detección exitosa
+                        isScanning = false
+                        Log.d(TAG, "Código QR detectado.")
                         vibrateDevice(vibrator)
-                        qrCode.rawValue?.let { onQrCodeDetected(it) }
-                        // No cerramos imageProxy aquí si llamamos a onQrCodeDetected,
-                        // ya que la cámara se desvinculará pronto.
-                        // Si no se detecta, sí debemos cerrarlo en addOnCompleteListener.
+                        qrCode.rawValue?.let {
+                            Log.d(TAG, "Código QR detectado: ${qrCode.rawValue}")
+                            onQrCodeDetected(it)
+                        }
+                    } else {
+                        Log.d(TAG, "No se detectó un código QR válido.")
                     }
                 }
                 .addOnFailureListener { e ->
                     if (isScanning) { // Solo loguear si aún estábamos escaneando
-                        Log.e(TAG, "Error en ML Kit Barcode Scanner", e)
+                        Log.e(TAG, "Error al procesar el código de barras en ML Kit", e)
+                    } else {
+                        Log.d(TAG, "Escaneo de código QR cancelado antes de completarse.")
                     }
                 }
                 .addOnCompleteListener {
                     // Cerrar imageProxy si no se llamó a onQrCodeDetected (éxito)
                     if (isScanning) {
+                        Log.d(TAG, "Cerrando imageProxy porque no se detectó ningún código QR.")
                         imageProxy.close()
+                    } else {
+                        Log.d(TAG, "Escaneo exitoso, no es necesario cerrar imageProxy.")
                     }
-                    // No es necesario cerrar explícitamente si isScanning es false,
-                    // ya que la desvinculación de la cámara lo manejará.
                 }
         } else {
             // Asegurarse de cerrar si no hay mediaImage
+            Log.w(TAG, "No se pudo obtener mediaImage, cerrando imageProxy.")
             imageProxy.close()
         }
+
     }
 }
-
-// --- Composable para la superposición (marco, scrim, texto) ---
 @Composable
 private fun ScannerOverlay() {
     val frameSize = 260.dp
@@ -334,7 +351,6 @@ private fun ScannerOverlay() {
         )
     }
 }
-
 
 // --- Funciones de utilidad para vibración ---
 @Composable
