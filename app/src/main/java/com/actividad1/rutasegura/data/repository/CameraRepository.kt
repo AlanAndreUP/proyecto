@@ -19,7 +19,7 @@ class CameraRepositoryImpl(
 
     // !!! ESTA ES UNA IMPLEMENTACIÓN FALSA / PLACEHOLDER !!!
     override suspend fun scanQRCode(): ScanResult = withContext(Dispatchers.IO) {
-        delay(1500) // Simula el tiempo de escaneo
+        delay(Random.nextLong(5000, 12000)) // Simula el tiempo de escaneo
         // Simula un resultado aleatorio
         if (Random.nextBoolean()) {
             ScanResult.Success("BUS-${Random.nextInt(100, 999)}")
