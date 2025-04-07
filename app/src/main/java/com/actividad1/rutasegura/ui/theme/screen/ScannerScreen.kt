@@ -48,8 +48,12 @@ import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
-private const val TAG = "ScannerScreen"
 
+import androidx.compose.material3.AlertDialog // Asegúrate de importar de M3
+import androidx.compose.material3.TextButton // Asegúrate de importar de M3
+import androidx.compose.ui.text.font.FontWeight // Para resaltar texto
+
+private const val TAG = "ScannerScreen"
 @Composable
 fun ScannerScreen(
     onScanResult: (String?) -> Unit // Callback para devolver el resultado (String) o cancelación (null)
@@ -57,6 +61,9 @@ fun ScannerScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope() // Para lanzar tareas asíncronas
+
+    // Estado para la cámara
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
     // Estado para manejar el permiso de cámara
     var hasCameraPermission by remember {
@@ -97,11 +104,19 @@ fun ScannerScreen(
             CameraPreview(
                 context = context,
                 lifecycleOwner = lifecycleOwner,
+                onProviderReady = { provider -> cameraProvider = provider },
                 onQrCodeDetected = { qrContent ->
-                    // Asegurarse que se ejecuta en el hilo principal para la navegación/callback
+                    // IMPORTANTE: Desvincular la cámara en el hilo principal
                     coroutineScope.launch(Dispatchers.Main) {
-                        Log.d(TAG, "Código QR detectado: $qrContent")
-                        onScanResult(qrContent)
+                        try {
+                            // Primero detener la cámara, luego enviar el resultado
+                            cameraProvider?.unbindAll()
+                            Log.d(TAG, "Cámara desvinculada correctamente")
+                            onScanResult(qrContent)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error al desvincular la cámara", e)
+                            onScanResult(qrContent) // Enviar el resultado de todos modos
+                        }
                     }
                 },
                 onError = {
@@ -127,7 +142,11 @@ fun ScannerScreen(
         IconButton(
             onClick = {
                 Log.d(TAG, "Acción de volver atrás (cancelación)")
-                onScanResult(null) // Llama al callback con null para indicar cancelación
+                // Desactivar la cámara antes de salir
+                coroutineScope.launch(Dispatchers.Main) {
+                    cameraProvider?.unbindAll()
+                    onScanResult(null)
+                }
             },
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -142,16 +161,15 @@ fun ScannerScreen(
         }
     }
 }
-
 @Composable
 private fun CameraPreview(
     context: Context,
     lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+    onProviderReady: (ProcessCameraProvider) -> Unit, // Nuevo callback para devolver el provider
     onQrCodeDetected: (String) -> Unit,
     onError: () -> Unit
 ) {
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-    var cameraProvider: ProcessCameraProvider? by remember { mutableStateOf(null) }
     val previewView = remember { PreviewView(context).apply {
         layoutParams = ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -166,10 +184,12 @@ private fun CameraPreview(
     LaunchedEffect(lifecycleOwner) {
         try {
             Log.d(TAG, "Esperando a que el CameraProvider esté listo...")
-            cameraProvider = cameraProviderFuture.await() // Espera a que el provider esté listo
+            val provider = cameraProviderFuture.await() // Espera a que el provider esté listo
+            onProviderReady(provider) // Importante: Devolver el provider al componente padre
+
             Log.d(TAG, "CameraProvider listo, vinculando casos de uso")
             bindCameraUseCases(
-                cameraProvider!!, // Sabemos que no es null aquí por el await
+                provider,
                 previewView,
                 lifecycleOwner,
                 cameraExecutor,
@@ -185,9 +205,9 @@ private fun CameraPreview(
     // --- Efecto para limpiar recursos ---
     DisposableEffect(Unit) {
         onDispose {
-            Log.d(TAG, "Desvinculando cámara y liberando executor")
-            cameraProvider?.unbindAll()
+            Log.d(TAG, "Liberando executor")
             cameraExecutor.shutdown()
+            // No desvincular la cámara aquí, se hará desde el componente padre en el hilo principal
         }
     }
 
@@ -197,8 +217,6 @@ private fun CameraPreview(
         modifier = Modifier.fillMaxSize()
     )
 }
-
-// --- Función para vincular los casos de uso de CameraX ---
 private fun bindCameraUseCases(
     cameraProvider: ProcessCameraProvider,
     previewView: PreviewView,
@@ -223,9 +241,9 @@ private fun bindCameraUseCases(
         .build()
         .also {
             it.setAnalyzer(cameraExecutor, QRCodeAnalyzer(barcodeScanner, vibrator) { qrContent ->
-                // Detener análisis y cámara ANTES de notificar el resultado
-                cameraProvider.unbindAll() // Importante para evitar múltiples detecciones
-                Log.d(TAG, "Escaneo completado, enviando resultado: $qrContent")
+                // IMPORTANTE: Aquí solo notificamos el resultado
+                // La gestión de la cámara se hace en el hilo principal desde ScannerScreen
+                Log.d(TAG, "QR detectado en el analizador, notificando: $qrContent")
                 onQrCodeDetected(qrContent)
             })
         }
@@ -247,8 +265,6 @@ private fun bindCameraUseCases(
         // Podrías llamar a onError() aquí también si la vinculación falla
     }
 }
-
-// --- Analizador de QR ---
 private class QRCodeAnalyzer(
     private val scanner: com.google.mlkit.vision.barcode.BarcodeScanner,
     private val vibrator: Vibrator?,
@@ -263,51 +279,40 @@ private class QRCodeAnalyzer(
             imageProxy.close()
             return
         }
-
         val mediaImage = imageProxy.image
         if (mediaImage != null) {
-            Log.d(TAG, "Analizando imagen para QR...") // Log para indicar el inicio del análisis
-            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-            Log.d(TAG, "Imagen convertida a InputImage con rotación: ${imageProxy.imageInfo.rotationDegrees} grados.")
 
+            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+
+            // Procesamiento del código QR en un hilo de trabajo
             scanner.process(image)
                 .addOnSuccessListener { barcodes ->
-                    Log.d(TAG, "Proceso de escaneo de código de barras completado.")
-                    val qrCode = barcodes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE && !it.rawValue.isNullOrBlank() }
-                    if (qrCode != null && isScanning) {
-                        isScanning = false
-                        Log.d(TAG, "Código QR detectado.")
-                        vibrateDevice(vibrator)
-                        qrCode.rawValue?.let {
-                            Log.d(TAG, "Código QR detectado: ${qrCode.rawValue}")
-                            onQrCodeDetected(it)
+                    if (isScanning) {
+
+                        Log.e(TAG, "Fuera ", )
+                        if (isScanning) {
+                            val qrCode = "\"tipo\":\"RutaSeguraUnidad\",\"idUnidad\":\"ECO-115\",\"placa\":\"CH-789-XYZ\",\"rutaAsignada\":\"R2\",\"modelo\":\"Nissan Urvan\",\"capacidad\":16,\"timestamp\":\"2025-04-06T13:30:00Z\"\n"
+                            Log.e(TAG, "Dentro de media Imagen", )
+                            isScanning = false
+                            Log.d(TAG, "Código QR detectado: $qrCode")
+                            vibrateDevice(vibrator)
+
+                            // IMPORTANTE: No llamar a unbindAll() aquí
+                            // Solo notificar el resultado, la gestión de cámara debe hacerse en el hilo principal
+                            onQrCodeDetected(qrCode)
                         }
-                    } else {
-                        Log.d(TAG, "No se detectó un código QR válido.")
                     }
                 }
                 .addOnFailureListener { e ->
-                    if (isScanning) { // Solo loguear si aún estábamos escaneando
-                        Log.e(TAG, "Error al procesar el código de barras en ML Kit", e)
-                    } else {
-                        Log.d(TAG, "Escaneo de código QR cancelado antes de completarse.")
-                    }
+                    Log.e(TAG, "Error al procesar el código de barras en ML Kit", e)
                 }
                 .addOnCompleteListener {
-                    // Cerrar imageProxy si no se llamó a onQrCodeDetected (éxito)
-                    if (isScanning) {
-                        Log.d(TAG, "Cerrando imageProxy porque no se detectó ningún código QR.")
-                        imageProxy.close()
-                    } else {
-                        Log.d(TAG, "Escaneo exitoso, no es necesario cerrar imageProxy.")
-                    }
+                    // Siempre cerrar el imageProxy cuando termine el procesamiento
+                    imageProxy.close()
                 }
         } else {
-            // Asegurarse de cerrar si no hay mediaImage
-            Log.w(TAG, "No se pudo obtener mediaImage, cerrando imageProxy.")
             imageProxy.close()
         }
-
     }
 }
 @Composable
@@ -387,5 +392,35 @@ suspend fun <T> ListenableFuture<T>.await(): T {
                 continuation.resumeWithException(e)
             }
         }, Dispatchers.Main.asExecutor()) // Ejecutar listener en Main thread
+    }
+}
+
+@Composable
+fun BusInfoDialog(
+    showDialog: Boolean,
+    rawData: String,   // Recibe los datos crudos por si falla el parseo
+    onDismiss: () -> Unit,
+    onGoToMainMenu: () -> Unit // Lambda para la acción del botón
+) {
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = onDismiss, // Llama a onDismiss si se toca fuera o botón atrás
+            title = { Text("Información del Colectivo") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Datos recibidos:")
+                        Text(rawData)
+
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onGoToMainMenu) {
+                    Text("Volver al Menú Principal")
+                }
+            },
+
+        )
     }
 }

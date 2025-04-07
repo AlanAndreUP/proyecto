@@ -1,5 +1,6 @@
 package com.actividad1.rutasegura.ui.theme.screen
 
+import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,21 +13,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow // Para TextOverflow.Ellipsis
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView // Para usar Vistas Android
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.actividad1.rutasegura.R // Asegúrate que exista R y los drawables referenciados
+import com.actividad1.rutasegura.R
+import com.actividad1.rutasegura.data.model.Route // Asegúrate que la importación sea correcta
+// Importar la nueva definición de ScanResult
 import com.actividad1.rutasegura.data.model.ScanResult
 import com.actividad1.rutasegura.data.model.SimulatedBusState
 import com.actividad1.rutasegura.data.model.UserLocation
 
 // Imports específicos de osmdroid
+import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -36,18 +41,34 @@ import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import androidx.compose.material3.DropdownMenuItem as DropdownMenuItem1
 
+// Configuración de osmdroid
+fun initializeOsmdroid(context: android.content.Context) {
+    Configuration.getInstance().load(context, androidx.preference.PreferenceManager.getDefaultSharedPreferences(context))
+}
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: MainViewModel, onNavigateToLogin: () -> Unit, onScanQrClicked: () -> Unit) {
+
+    // --- Inicialización de osmdroid ---
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        initializeOsmdroid(context.applicationContext)
+    }
+
+    // --- Estados del ViewModel ---
     val userLocation by viewModel.userLocation.collectAsState()
     val availableRoutes by viewModel.availableRoutes.collectAsState()
     val simulatedBuses by viewModel.simulatedBuses.collectAsState()
     val isSimulationRunning by viewModel.isSimulationRunning.collectAsState()
     val nearestBusEta by viewModel.nearestBusEta.collectAsState()
-    val scanResult by viewModel.scanResult.collectAsState()
+    // Usar la nueva definición de ScanResult
+    val scanResultState by viewModel.scanResult.collectAsState()
     val isLoadingScan by viewModel.isLoadingScan.collectAsState()
     val isLoadingRoutes by viewModel.isLoadingRoutes.collectAsState()
 
+    // --- Estados locales de UI ---
     var selectedRouteId by remember { mutableStateOf<String?>(null) }
     val selectedRoute = remember(selectedRouteId, availableRoutes) {
         availableRoutes.find { it.id == selectedRouteId }
@@ -55,32 +76,27 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToLogin: () -> Unit, onScanQr
     var showRouteSelector by remember { mutableStateOf(false) }
     var showScanResultDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(scanResult) {
-        showScanResultDialog = scanResult != null
+    // --- Efecto para mostrar/ocultar el diálogo ---
+    LaunchedEffect(scanResultState) {
+        // El diálogo se muestra si el estado NO es Idle
+        showScanResultDialog = scanResultState != ScanResult.Idle
+
+        // Opcional: Puedes hacer logging aquí para ver los cambios de estado
+        if (scanResultState != ScanResult.Idle) {
+            Log.d("MainScreen", "ScanResult state changed: $scanResultState, showing dialog.")
+        } else {
+            Log.d("MainScreen", "ScanResult state is Idle, hiding dialog.")
+        }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        "Bus Tracker",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary
-                ),
+                title = { Text("Ruta Segura", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary, titleContentColor = MaterialTheme.colorScheme.onPrimary),
                 actions = {
                     IconButton(onClick = onNavigateToLogin) {
-                        Icon(
-                            imageVector = Icons.Filled.Person,
-                            contentDescription = "Login",
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
+                        Icon(Icons.Filled.Person, contentDescription = "Login", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             )
@@ -109,47 +125,111 @@ fun MainScreen(viewModel: MainViewModel, onNavigateToLogin: () -> Unit, onScanQr
             OsmMapView(
                 modifier = Modifier.fillMaxSize(),
                 userLocation = userLocation,
-                simulatedBuses = simulatedBuses,
+                simulatedBuses = simulatedBuses.filter { selectedRouteId == null || it.routeId == selectedRouteId },
                 selectedRoute = selectedRoute,
                 onMapReady = { mapView ->
-                    // Centrar mapa si es necesario
-                    if (mapView.mapCenter == GeoPoint(0.0, 0.0) || userLocation == null) {
-                        mapView.controller.setCenter(GeoPoint(16.7531, -93.1156)) // Centro aproximado
-                        mapView.controller.setZoom(12.0)
+                    if (userLocation == null && mapView.mapCenter.latitude == 0.0 && mapView.mapCenter.longitude == 0.0) {
+                        mapView.controller.setCenter(GeoPoint(16.7531, -93.1156)) // Tuxtla
+                        mapView.controller.setZoom(13.0)
                     }
                 }
             )
 
             // Tarjeta de información flotante
             InfoCard(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 16.dp)
-                    .padding(horizontal = 16.dp),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 16.dp, start = 16.dp, end = 16.dp),
                 nearestBusEta = nearestBusEta,
                 selectedRoute = selectedRoute,
                 isSimulationRunning = isSimulationRunning
             )
 
-            // Diálogo de resultado de escaneo
-            if (showScanResultDialog) {
-                ScanResultDialog(
-                    scanResult = scanResult,
+            // --- Diálogo de Resultado del Escaneo (Adaptado) ---
+            scanResultState?.let {
+                ScanResultDisplayDialog(
+                    showDialog = showScanResultDialog,
+                    scanResult = it, // Pasamos el estado completo
                     onDismiss = {
-                        showScanResultDialog = false
-                        viewModel.clearScanResult() // Limpiar resultado
+                        Log.d("MainScreen", "Diálogo cerrado (onDismiss)")
+                        showScanResultDialog = false // Ocultar
+                        viewModel.clearScanResult() // Volver a Idle
+                    },
+                    onAccept = {
+                        Log.d("MainScreen", "Botón 'Aceptar' presionado")
+                        showScanResultDialog = false // Ocultar
+                        viewModel.clearScanResult() // Volver a Idle
                     }
                 )
             }
+
+        } // Fin Box principal
+    } // Fin Scaffold
+} // Fin MainScreen
+
+
+// --- Diálogo de Resultado del Escaneo (Adaptado a la nueva definición de ScanResult) ---
+@Composable
+fun ScanResultDisplayDialog(
+    showDialog: Boolean,
+    scanResult: ScanResult, // Recibe el estado completo con la nueva definición
+    onDismiss: () -> Unit,
+    onAccept: () -> Unit
+) {
+    // Solo mostrar si showDialog es true y el estado no es Idle
+    if (showDialog && scanResult != ScanResult.Idle) {
+
+        val title: String
+        val message: String
+        val icon: Int
+        val iconTint: Color
+
+        when (scanResult) {
+            is ScanResult.Success -> {
+                title = "Código Escaneado"
+                // Acceder al contenido usando scanResult.content
+                message = "Contenido:\n${scanResult.content}"
+                icon = R.drawable.qr_code_scanner_24px // Icono de éxito
+                iconTint = MaterialTheme.colorScheme.primary
+            }
+            ScanResult.Cancelled -> { // Usar el objeto directamente
+                title = "Escaneo Cancelado"
+                message = "La operación de escaneo fue cancelada por el usuario."
+                icon = R.drawable.cancel_24px // Icono de cancelación
+                iconTint = MaterialTheme.colorScheme.secondary
+            }
+            ScanResult.Error -> { // Usar el objeto directamente
+                title = "Error de Escaneo"
+                // Mensaje genérico porque ScanResult.Error ya no tiene detalles
+                message = "Ocurrió un error durante el escaneo."
+                icon = R.drawable.error_24px // Icono de error
+                iconTint = MaterialTheme.colorScheme.error
+            }
+            // El caso Idle no debería mostrar el diálogo basado en la lógica de MainScreen
+            ScanResult.Idle -> return // Salir si por alguna razón llega aquí con Idle
         }
+
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            icon = { Icon(painterResource(id = icon), contentDescription = null, tint = iconTint) },
+            title = { Text(title) },
+            text = { Text(message, style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {
+                TextButton(onClick = onAccept) {
+                    Text("Aceptar")
+                }
+            },
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 }
+
+
+// --- InfoCard, OsmMapView, AppBottomBar (Sin cambios respecto a la versión anterior) ---
 
 @Composable
 fun InfoCard(
     modifier: Modifier = Modifier,
     nearestBusEta: String?,
-    selectedRoute: com.actividad1.rutasegura.data.model.Route?,
+    selectedRoute: Route?, // Usar el tipo Route importado
     isSimulationRunning: Boolean
 ) {
     Card(
@@ -157,11 +237,11 @@ fun InfoCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f) // Un poco más opaco
         )
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), // Ajustar padding
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -169,79 +249,104 @@ fun InfoCard(
             if (selectedRoute != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        painter = painterResource(R.drawable.directions_bus_24px),
+                        painter = painterResource(R.drawable.route_24px), // Cambiado a ruta
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp) // Ligeramente más pequeño
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = selectedRoute.name,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.SemiBold // Un poco menos fuerte que Bold
                     )
                 }
+                Divider(modifier = Modifier.padding(vertical = 4.dp)) // Separador
             }
 
-            // Información de ETA
-            if (nearestBusEta != null && isSimulationRunning) {
-                Divider(
-                    modifier = Modifier.padding(vertical = 4.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        painter = painterResource(R.drawable.access_time_filled),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+            // Información de ETA o estado
+            when {
+                // ETA disponible y simulación corriendo
+                nearestBusEta != null && isSimulationRunning && selectedRoute != null -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            painter = painterResource(R.drawable.access_time_filled),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Próximo bus: $nearestBusEta",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                // Simulación corriendo pero sin ETA (o sin ruta seleccionada)
+                isSimulationRunning && selectedRoute != null -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary // Usar color primario
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Calculando tiempo de llegada...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant // Color más tenue
+                        )
+                    }
+                }
+                // Simulación detenida pero hay ruta seleccionada
+                selectedRoute != null && !isSimulationRunning -> {
                     Text(
-                        text = "Próximo bus: $nearestBusEta",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = "Presiona 'Iniciar' para ver tiempos.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary // Indicar acción
                     )
                 }
-            } else if (isSimulationRunning) {
-                // Estado de carga cuando la simulación está corriendo pero aún no hay ETA
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                // No hay ruta seleccionada
+                selectedRoute == null -> {
                     Text(
-                        text = "Calculando tiempo de llegada...",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = "Selecciona una ruta abajo.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
-
-            // Mensaje cuando no hay simulación
-            if (selectedRoute != null && !isSimulationRunning) {
-                Text(
-                    text = "Pulse 'Iniciar' para comenzar simulación",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
 }
 
-// Composable para el mapa de osmdroid (sin cambios)
 @Composable
 fun OsmMapView(
     modifier: Modifier = Modifier,
     userLocation: UserLocation?,
     simulatedBuses: List<SimulatedBusState>,
-    selectedRoute: com.actividad1.rutasegura.data.model.Route?,
-    onMapReady: (MapView) -> Unit = {} // Callback opcional
+    selectedRoute: Route?, // Usar el tipo importado
+    onMapReady: (MapView) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val mapView = remember { MapView(context) }
+
+    // --- Marcador de Usuario ---
+    val userMarker = remember { Marker(mapView).apply {
+        // icon = ContextCompat.getDrawable(context, R.drawable.ic_user_location) // Ejemplo
+        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        title = "Tú estás aquí"
+    }}
+
+    // --- Marcadores de Buses ---
+    val busMarkers = remember { mutableStateMapOf<String, Marker>() }
+
+    // --- Polyline de Ruta ---
+    val routePolyline = remember { Polyline().apply {
+        outlinePaint.color = android.graphics.Color.BLUE
+        outlinePaint.strokeWidth = 10f
+    }}
 
     // Efecto para manejar el ciclo de vida del MapView
     DisposableEffect(lifecycleOwner, mapView) {
@@ -249,12 +354,12 @@ fun OsmMapView(
             when (event) {
                 Lifecycle.Event.ON_RESUME -> mapView.onResume()
                 Lifecycle.Event.ON_PAUSE -> mapView.onPause()
-                Lifecycle.Event.ON_DESTROY -> mapView.onDetach() // Limpieza final
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            Log.d("OsmMapView", "Disposing MapView")
             lifecycleOwner.lifecycle.removeObserver(observer)
             mapView.onDetach()
         }
@@ -262,51 +367,61 @@ fun OsmMapView(
 
     AndroidView(
         factory = { ctx ->
+            Log.d("OsmMapView", "Factory ejecutándose")
             mapView.apply {
                 setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
-                controller.setZoom(12.0)
-                controller.setCenter(GeoPoint(16.7531, -93.1156)) // Centro inicial
-
-                val locationProvider = GpsMyLocationProvider(ctx)
-                val locationOverlay = MyLocationNewOverlay(locationProvider, this).apply {
-                    enableMyLocation()
-                }
-                overlays.add(locationOverlay)
             }
+            mapView.overlays.add(routePolyline)
+            mapView.overlays.add(userMarker)
+            onMapReady(mapView)
             mapView
         },
         update = { view ->
+            Log.d("OsmMapView", "Update ejecutándose")
+
+            // --- Actualizar Marcador de Usuario ---
             userLocation?.let { loc ->
                 val userGeoPoint = GeoPoint(loc.latitude, loc.longitude)
-                view.controller.animateTo(userGeoPoint, 15.0, 1000L)
+                userMarker.position = userGeoPoint
+                userMarker.setVisible(true)
+            } ?: run {
+                userMarker.setVisible(false)
             }
 
-            // Limpiar overlays antiguos
-            view.overlays.clear()
-
-            // Agregar marcadores para buses simulados
-            simulatedBuses.forEach { bus ->
-                val busGeoPoint = GeoPoint(bus.currentLocation.latitude, bus.currentLocation.longitude)
-                val busMarker = Marker(view).apply {
-                    position = busGeoPoint
-                    title = "Bus ${bus.busId} (${bus.routeId})"
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                }
-                view.overlays.add(busMarker)
-            }
-
-            // Agregar polyline para la ruta seleccionada
+            // --- Actualizar Polyline de Ruta ---
             selectedRoute?.points?.let { points ->
                 if (points.size >= 2) {
                     val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
-                    val poly = Polyline().apply {
-                        setPoints(geoPoints)
-                        outlinePaint.color = android.graphics.Color.BLUE
-                        outlinePaint.strokeWidth = 10f
-                    }
-                    view.overlays.add(poly)
+                    routePolyline.setPoints(geoPoints)
+                    routePolyline.setVisible(true)
+                } else {
+                    routePolyline.setVisible(false)
                 }
+            } ?: run {
+                routePolyline.setVisible(false)
+                routePolyline.setPoints(emptyList())
+            }
+
+
+            // --- Actualizar Marcadores de Buses ---
+            val currentBusIds = simulatedBuses.map { it.busId }.toSet()
+            val markersToRemove = busMarkers.keys.filter { it !in currentBusIds }
+            markersToRemove.forEach { busId ->
+                view.overlays.remove(busMarkers[busId])
+                busMarkers.remove(busId)
+            }
+            simulatedBuses.forEach { bus ->
+                val busGeoPoint = GeoPoint(bus.currentLocation.latitude, bus.currentLocation.longitude)
+                val marker = busMarkers.getOrPut(bus.busId) {
+                    Marker(view).apply {
+                        icon = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.directions_bus_24px)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        view.overlays.add(this)
+                    }
+                }
+                marker.position = busGeoPoint
+                marker.title = "Bus ${bus.busId} (Ruta ${bus.routeId})"
             }
 
             view.invalidate()
@@ -315,76 +430,11 @@ fun OsmMapView(
     )
 }
 
-// Diálogo de resultado de escaneo mejorado
-@Composable
-fun ScanResultDialog(
-    scanResult: ScanResult?,
-    onDismiss: () -> Unit
-) {
-    if (scanResult == null) return
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    painter = when (scanResult) {
-                        is ScanResult.Success -> painterResource(R.drawable.qr_code_scanner_24px)
-                        is ScanResult.Cancelled -> painterResource(R.drawable.cancel_24px)
-                        is ScanResult.Error -> painterResource(R.drawable.error_24px)
-                    },
-                    contentDescription = null,
-                    tint = when (scanResult) {
-                        is ScanResult.Success -> MaterialTheme.colorScheme.primary
-                        is ScanResult.Cancelled -> MaterialTheme.colorScheme.secondary
-                        is ScanResult.Error -> MaterialTheme.colorScheme.error
-                    }
-                )
-                Text(
-                    "Resultado del Escaneo",
-                    style = MaterialTheme.typography.titleLarge
-                )
-            }
-        },
-        text = {
-            val message = when (scanResult) {
-                is ScanResult.Success -> "Colectivo identificado:\n${scanResult.content}"
-                is ScanResult.Error -> "❌ Error al escanear el código."
-                is ScanResult.Cancelled -> "⚠️ Escaneo cancelado por el usuario."
-            }
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("Aceptar")
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.surface,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.padding(16.dp)
-    )
-}
-
-// AppBottomBar mejorado
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppBottomBar(
     viewModel: MainViewModel,
-    availableRoutes: List<com.actividad1.rutasegura.data.model.Route>,
+    availableRoutes: List<Route>, // Usar el tipo importado
     isLoadingRoutes: Boolean,
     isSimulationRunning: Boolean,
     isLoadingScan: Boolean,
@@ -402,13 +452,10 @@ private fun AppBottomBar(
         Column(
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Separador superior con el color del tema
             Divider(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                 thickness = 1.dp
             )
-
-            // Contenido de la barra inferior
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -416,23 +463,17 @@ private fun AppBottomBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Selector de Ruta
+                // --- Selector de Ruta ---
                 Box(modifier = Modifier.weight(1.5f)) {
                     OutlinedButton(
                         onClick = { onShowRouteSelectorChange(true) },
                         enabled = !isSimulationRunning && !isLoadingRoutes,
                         modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(
                             width = 1.dp,
-                            color = if (!isSimulationRunning && !isLoadingRoutes)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                        ),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary
+                            color = if (!isSimulationRunning && !isLoadingRoutes) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
                         )
                     ) {
                         Row(
@@ -445,24 +486,23 @@ private fun AppBottomBar(
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = availableRoutes.find { it.id == selectedRouteId }?.name
-                                    ?: "Seleccionar Ruta",
+                                text = availableRoutes.find { it.id == selectedRouteId }?.name ?: "Seleccionar Ruta",
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.labelLarge
                             )
-                        }
-
-                        if (isLoadingRoutes) {
-                            Spacer(Modifier.width(8.dp))
-                            CircularProgressIndicator(
-                                Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            if (isLoadingRoutes) {
+                                Spacer(Modifier.width(8.dp))
+                                CircularProgressIndicator(
+                                    Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                     }
 
+                    // --- Menú Desplegable de Rutas ---
                     DropdownMenu(
                         expanded = showRouteSelector,
                         onDismissRequest = { onShowRouteSelectorChange(false) },
@@ -470,76 +510,42 @@ private fun AppBottomBar(
                     ) {
                         if (availableRoutes.isEmpty() && !isLoadingRoutes) {
                             DropdownMenuItem1(
-                                text = {
-                                    Text(
-                                        "No hay rutas disponibles",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                },
+                                text = { Text("No hay rutas disponibles", style = MaterialTheme.typography.bodyMedium) },
                                 onClick = {},
                                 enabled = false
                             )
                         }
-
                         availableRoutes.forEach { route ->
                             DropdownMenuItem1(
-                                text = {
-                                    Text(
-                                        route.name,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                },
+                                text = { Text(route.name, style = MaterialTheme.typography.bodyMedium) },
                                 onClick = {
                                     onRouteSelected(route.id)
                                     onShowRouteSelectorChange(false)
                                 },
                                 leadingIcon = {
                                     if (route.id == selectedRouteId) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Check,
-                                            contentDescription = "Selected",
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
+                                        Icon(Icons.Filled.Check, contentDescription = "Seleccionado", tint = MaterialTheme.colorScheme.primary)
                                     } else {
-                                        Icon(
-                                            painter = painterResource(R.drawable.directions_bus_24px),
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        Icon(painterResource(R.drawable.directions_bus_24px), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             )
                         }
-
                         if (selectedRouteId != null) {
-                            Divider(
-                                modifier = Modifier.padding(vertical = 4.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant
-                            )
+                            Divider(modifier = Modifier.padding(vertical = 4.dp))
                             DropdownMenuItem1(
-                                text = {
-                                    Text(
-                                        "Limpiar selección",
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                },
+                                text = { Text("Limpiar selección", style = MaterialTheme.typography.bodyMedium) },
                                 onClick = {
                                     onRouteSelected(null)
                                     onShowRouteSelectorChange(false)
                                 },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.Clear,
-                                        contentDescription = "Clear",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                }
+                                leadingIcon = { Icon(Icons.Filled.Clear, contentDescription = "Limpiar", tint = MaterialTheme.colorScheme.error) }
                             )
                         }
                     }
                 }
 
-                // Botones de acción
+                // --- Botón Iniciar/Detener Simulación ---
                 Button(
                     onClick = {
                         if (isSimulationRunning) viewModel.stopSimulation()
@@ -549,30 +555,17 @@ private fun AppBottomBar(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isSimulationRunning)
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.primary
+                        containerColor = if (isSimulationRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
+                        contentColor = if (isSimulationRunning) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary
                     ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (isSimulationRunning) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.stop_24px),
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Filled.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(
+                            painter = if (isSimulationRunning) painterResource(id = R.drawable.stop_24px) else painterResource(id = R.drawable._23_24px),
+                            contentDescription = null,
+                            modifier = Modifier.size(if (isSimulationRunning) 16.dp else 18.dp)
+                        )
                         Text(
                             if (isSimulationRunning) "Detener" else "Iniciar",
                             style = MaterialTheme.typography.labelLarge
@@ -580,45 +573,31 @@ private fun AppBottomBar(
                     }
                 }
 
-                // Botón Escanear
+                // --- Botón Escanear ---
                 Button(
-                    onClick = { onScanQrClicked() },
+                    onClick = onScanQrClicked,
                     enabled = !isLoadingScan,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.secondary
                     ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (isLoadingScan) {
-                            CircularProgressIndicator(
-                                Modifier.size(18.dp),
-                                color = LocalContentColor.current,
-                                strokeWidth = 2.dp
-                            )
+                            CircularProgressIndicator(Modifier.size(18.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
                         } else {
                             Icon(
-                                painter = painterResource(R.drawable.stop_24px),
+                                painter = painterResource(R.drawable.qr_code_scanner_24px),
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
-                            Text(
-                                "Scan",
-                                style = MaterialTheme.typography.labelLarge
-                            )
+                            Text("Scan", style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }
             }
         }
     }
-}
-
-fun Double.format(digits: Int): String {
-    return String.format("%.${digits}f", this)
 }

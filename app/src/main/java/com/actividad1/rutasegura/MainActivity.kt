@@ -104,15 +104,12 @@ fun AppNavigation(
     val navController = rememberNavController()
     val adminViewModel: AdminViewModel = viewModel()
 
-    // --- Ya NO necesitamos el scanQrLauncher aquí ---
-    // val scanQrLauncher = rememberLauncherForActivityResult(...) { ... }
 
     NavHost(
         navController = navController,
         startDestination = AppScreen.MainUser.route // O Login si es el flujo normal
     ) {
 
-        // Pantalla de Login (sin cambios)
         composable(route = AppScreen.Login.route) {
             LoginScreen(
                 viewModel = adminViewModel,
@@ -125,7 +122,6 @@ fun AppNavigation(
             )
         }
 
-        // Pantalla de Admin Dashboard (sin cambios)
         composable(route = AppScreen.AdminDashboard.route) {
             AdminDashboardScreen(
                 viewModel = adminViewModel,
@@ -173,11 +169,9 @@ fun AppNavigation(
                         onNavigateToLogin = {
                             navController.navigate(AppScreen.Login.route) {
                                 launchSingleTop = true
-                                // Considera popUpTo si es necesario limpiar la pila
                             }
                         },
                         onScanQrClicked = {
-                            // --- NAVEGAR A LA PANTALLA DEL SCANNER ---
                             navController.navigate(AppScreen.Scanner.route)
                         }
                     )
@@ -196,11 +190,9 @@ fun AppNavigation(
             )
         }
 
-        // --- NUEVA RUTA PARA EL SCANNER ---
         composable(route = AppScreen.Scanner.route) {
             ScannerScreen(
                 onScanResult = { result ->
-                    // Poner el resultado en el SavedStateHandle de la pantalla ANTERIOR (MainUser)
                     navController.previousBackStackEntry
                         ?.savedStateHandle
                         ?.set("scan_result", result) // Usar una clave consistente
