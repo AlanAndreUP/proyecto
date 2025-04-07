@@ -75,7 +75,6 @@ dependencies {
     implementation(libs.play.services.mlkit.barcode.scanning)
     implementation(libs.androidx.camera.view)
     implementation(libs.firebase.crashlytics.buildtools)
-    implementation(libs.transportation.consumer)
 
     // Testing
     testImplementation("junit:junit:4.13.2")

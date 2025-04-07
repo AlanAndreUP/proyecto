@@ -28,7 +28,6 @@ import kotlinx.coroutines.Dispatchers
 import androidx.activity.compose.rememberLauncherForActivityResult // Importar
 import androidx.compose.foundation.isSystemInDarkTheme
 import com.actividad1.rutasegura.data.model.ScanResult
-import com.actividad1.rutasegura.ui.theme.AppTheme
 import com.actividad1.rutasegura.ui.theme.ElectricTheme
 import com.actividad1.rutasegura.ui.theme.components.LocationProviderWrapper
 import com.actividad1.rutasegura.util.ScanQrCodeContract
